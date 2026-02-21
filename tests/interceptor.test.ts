@@ -1,20 +1,28 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { PredicateAuthorizationError } from "../src/errors.js";
 import {
   PredicateActivityInterceptor,
+  type PredicateAuthorizationResponse,
   createPredicateInterceptors,
 } from "../src/interceptor.js";
-import { PredicateAuthorizationError } from "../src/errors.js";
 
-// Mock AuthorityClient
-interface MockAuthorizationResponse {
-  allowed: boolean;
-  reason: string;
-  violatedRule?: string | null;
-  missingLabels?: string[];
-  mandate?: unknown;
+// Mock Context from @temporalio/activity
+interface MockContext {
+  info: {
+    activityType: string;
+  };
 }
 
-function createMockAuthorityClient(response: MockAuthorizationResponse) {
+function createMockContext(activityType: string): MockContext {
+  return {
+    info: {
+      activityType,
+    },
+  };
+}
+
+// Mock AuthorityClient
+function createMockAuthorityClient(response: PredicateAuthorizationResponse) {
   return {
     authorize: vi.fn().mockResolvedValue(response),
   };
@@ -22,8 +30,8 @@ function createMockAuthorityClient(response: MockAuthorizationResponse) {
 
 // Mock ActivityExecuteInput
 interface MockActivityInput {
-  activityType: string;
   args: unknown[];
+  headers: Map<string, unknown>;
 }
 
 describe("PredicateActivityInterceptor", () => {
@@ -37,17 +45,20 @@ describe("PredicateActivityInterceptor", () => {
     const mockClient = createMockAuthorityClient({
       allowed: true,
       reason: "allowed",
-      mandate: { id: "m_123" },
+      mandate_id: "m_123",
+      violated_rule: null,
+      missing_labels: [],
     });
 
-    const interceptor = new PredicateActivityInterceptor({
-      authorityClient: mockClient as never,
+    const mockCtx = createMockContext("processOrder");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
       principal: "test-worker",
     });
 
     const input: MockActivityInput = {
-      activityType: "processOrder",
       args: [{ orderId: 123 }],
+      headers: new Map(),
     };
 
     const result = await interceptor.execute(input as never, mockNext);
@@ -61,17 +72,20 @@ describe("PredicateActivityInterceptor", () => {
     const mockClient = createMockAuthorityClient({
       allowed: false,
       reason: "explicit_deny",
-      violatedRule: "deny-dangerous",
+      mandate_id: null,
+      violated_rule: "deny-dangerous",
+      missing_labels: [],
     });
 
-    const interceptor = new PredicateActivityInterceptor({
-      authorityClient: mockClient as never,
+    const mockCtx = createMockContext("dangerousActivity");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
       principal: "test-worker",
     });
 
     const input: MockActivityInput = {
-      activityType: "dangerousActivity",
       args: [],
+      headers: new Map(),
     };
 
     await expect(interceptor.execute(input as never, mockNext)).rejects.toThrow(
@@ -85,17 +99,19 @@ describe("PredicateActivityInterceptor", () => {
     const mockClient = createMockAuthorityClient({
       allowed: false,
       reason: "missing_required_verification",
-      violatedRule: "require-approval",
-      missingLabels: ["approved", "reviewed"],
+      mandate_id: null,
+      violated_rule: "require-approval",
+      missing_labels: ["approved", "reviewed"],
     });
 
-    const interceptor = new PredicateActivityInterceptor({
-      authorityClient: mockClient as never,
+    const mockCtx = createMockContext("sensitiveActivity");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
     });
 
     const input: MockActivityInput = {
-      activityType: "sensitiveActivity",
       args: [],
+      headers: new Map(),
     };
 
     try {
@@ -115,137 +131,160 @@ describe("PredicateActivityInterceptor", () => {
     const mockClient = createMockAuthorityClient({
       allowed: true,
       reason: "allowed",
+      mandate_id: null,
+      violated_rule: null,
+      missing_labels: [],
     });
 
-    const interceptor = new PredicateActivityInterceptor({
-      authorityClient: mockClient as never,
+    const mockCtx = createMockContext("testActivity");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
     });
 
     const input: MockActivityInput = {
-      activityType: "testActivity",
       args: [],
+      headers: new Map(),
     };
 
     await interceptor.execute(input as never, mockNext);
 
     const authorizeCall = mockClient.authorize.mock.calls[0]?.[0];
-    expect(authorizeCall?.principal?.principalId).toBe("temporal-worker");
+    expect(authorizeCall?.principal).toBe("temporal-worker");
   });
 
-  it("should include tenant and session IDs when provided", async () => {
+  it("should include tenant and session IDs in context when provided", async () => {
     const mockClient = createMockAuthorityClient({
       allowed: true,
       reason: "allowed",
+      mandate_id: null,
+      violated_rule: null,
+      missing_labels: [],
     });
 
-    const interceptor = new PredicateActivityInterceptor({
-      authorityClient: mockClient as never,
+    const mockCtx = createMockContext("testActivity");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
       principal: "custom-worker",
       tenantId: "tenant-123",
       sessionId: "session-456",
     });
 
     const input: MockActivityInput = {
-      activityType: "testActivity",
       args: [],
+      headers: new Map(),
     };
 
     await interceptor.execute(input as never, mockNext);
 
     const authorizeCall = mockClient.authorize.mock.calls[0]?.[0];
-    expect(authorizeCall?.principal).toEqual({
-      principalId: "custom-worker",
-      tenantId: "tenant-123",
-      sessionId: "session-456",
-    });
+    expect(authorizeCall?.principal).toBe("custom-worker");
+    expect(authorizeCall?.context?.tenant_id).toBe("tenant-123");
+    expect(authorizeCall?.context?.session_id).toBe("session-456");
   });
 
   it("should hash activity arguments for state evidence", async () => {
     const mockClient = createMockAuthorityClient({
       allowed: true,
       reason: "allowed",
+      mandate_id: null,
+      violated_rule: null,
+      missing_labels: [],
     });
 
-    const interceptor = new PredicateActivityInterceptor({
-      authorityClient: mockClient as never,
+    const mockCtx = createMockContext("testActivity");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
     });
 
     const input: MockActivityInput = {
-      activityType: "testActivity",
       args: [{ data: "test" }, 123],
+      headers: new Map(),
     };
 
     await interceptor.execute(input as never, mockNext);
 
     const authorizeCall = mockClient.authorize.mock.calls[0]?.[0];
-    expect(authorizeCall?.stateEvidence?.stateHash).toBeDefined();
-    expect(authorizeCall?.stateEvidence?.stateHash).toHaveLength(64); // SHA-256 hex
-    expect(authorizeCall?.stateEvidence?.source).toBe("temporal-worker");
+    expect(authorizeCall?.context?.state_hash).toBeDefined();
+    expect(authorizeCall?.context?.state_hash).toHaveLength(64); // SHA-256 hex
   });
 
   it("should use custom resource when provided", async () => {
     const mockClient = createMockAuthorityClient({
       allowed: true,
       reason: "allowed",
+      mandate_id: null,
+      violated_rule: null,
+      missing_labels: [],
     });
 
-    const interceptor = new PredicateActivityInterceptor({
-      authorityClient: mockClient as never,
+    const mockCtx = createMockContext("testActivity");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
       resource: "temporal:custom-queue",
     });
 
     const input: MockActivityInput = {
-      activityType: "testActivity",
       args: [],
+      headers: new Map(),
     };
 
     await interceptor.execute(input as never, mockNext);
 
     const authorizeCall = mockClient.authorize.mock.calls[0]?.[0];
-    expect(authorizeCall?.actionSpec?.resource).toBe("temporal:custom-queue");
+    expect(authorizeCall?.resource).toBe("temporal:custom-queue");
+  });
+
+  it("should use activity type from context", async () => {
+    const mockClient = createMockAuthorityClient({
+      allowed: true,
+      reason: "allowed",
+      mandate_id: null,
+      violated_rule: null,
+      missing_labels: [],
+    });
+
+    const mockCtx = createMockContext("mySpecificActivity");
+    const interceptor = new PredicateActivityInterceptor(mockCtx as never, {
+      authorityClient: mockClient,
+    });
+
+    const input: MockActivityInput = {
+      args: [],
+      headers: new Map(),
+    };
+
+    await interceptor.execute(input as never, mockNext);
+
+    const authorizeCall = mockClient.authorize.mock.calls[0]?.[0];
+    expect(authorizeCall?.action).toBe("mySpecificActivity");
   });
 });
 
 describe("createPredicateInterceptors", () => {
-  it("should return WorkerInterceptors with activity interceptor", () => {
+  it("should return WorkerInterceptors with activity interceptor factory array", () => {
     const mockClient = createMockAuthorityClient({
       allowed: true,
       reason: "allowed",
+      mandate_id: null,
+      violated_rule: null,
+      missing_labels: [],
     });
 
     const interceptors = createPredicateInterceptors({
-      authorityClient: mockClient as never,
+      authorityClient: mockClient,
       principal: "test-worker",
     });
 
     expect(interceptors).toBeDefined();
     expect(interceptors.activity).toBeDefined();
-    expect(typeof interceptors.activity).toBe("function");
+    expect(Array.isArray(interceptors.activity)).toBe(true);
+    expect(interceptors.activity).toHaveLength(1);
 
     // Call the factory to get the interceptors
-    const activityInterceptors = interceptors.activity?.();
+    const mockCtx = createMockContext("testActivity");
+    const factory = interceptors.activity?.[0];
+    const activityInterceptors = factory?.(mockCtx as never);
     expect(activityInterceptors?.inbound).toBeInstanceOf(PredicateActivityInterceptor);
-  });
-
-  it("should pass all options to the interceptor", () => {
-    const mockClient = createMockAuthorityClient({
-      allowed: true,
-      reason: "allowed",
-    });
-
-    const interceptors = createPredicateInterceptors({
-      authorityClient: mockClient as never,
-      principal: "custom-worker",
-      tenantId: "tenant-123",
-      sessionId: "session-456",
-      resource: "custom:resource",
-    });
-
-    const activityInterceptors = interceptors.activity?.();
-    const interceptor = activityInterceptors?.inbound as PredicateActivityInterceptor;
-
-    // Access private properties via type casting for testing
-    expect((interceptor as unknown as { principal: string }).principal).toBe("custom-worker");
   });
 });
 

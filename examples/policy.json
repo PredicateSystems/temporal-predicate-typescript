@@ -1,0 +1,39 @@
+{
+  "rules": [
+    {
+      "name": "allow-order-processing",
+      "effect": "allow",
+      "principals": ["temporal-worker"],
+      "actions": ["processOrder", "checkInventory", "reserveInventory", "sendConfirmation"],
+      "resources": ["*"]
+    },
+    {
+      "name": "allow-payment-processing",
+      "effect": "allow",
+      "principals": ["temporal-worker"],
+      "actions": ["chargePayment", "refundPayment"],
+      "resources": ["*"]
+    },
+    {
+      "name": "allow-notifications",
+      "effect": "allow",
+      "principals": ["temporal-worker"],
+      "actions": ["sendEmail", "sendSms"],
+      "resources": ["*"]
+    },
+    {
+      "name": "allow-basic-activities",
+      "effect": "allow",
+      "principals": ["temporal-worker"],
+      "actions": ["greet", "fetchData", "processData"],
+      "resources": ["*"]
+    },
+    {
+      "name": "deny-dangerous-operations",
+      "effect": "deny",
+      "principals": ["*"],
+      "actions": ["delete*", "admin*", "drop*"],
+      "resources": ["*"]
+    }
+  ]
+}

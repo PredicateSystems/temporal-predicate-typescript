@@ -5,22 +5,54 @@
  * enforcing cryptographic authorization mandates before any activity code runs.
  */
 
+import { createHash } from "node:crypto";
+import type { Context } from "@temporalio/activity";
 import type {
   ActivityExecuteInput,
   ActivityInboundCallsInterceptor,
+  ActivityInterceptorsFactory,
   Next,
   WorkerInterceptors,
 } from "@temporalio/worker";
-import type { AuthorityClient, AuthorizeRequest } from "@predicatesystems/authority";
-import { createHash } from "node:crypto";
 import { PredicateAuthorizationError } from "./errors.js";
+
+/**
+ * Interface for the Predicate Authority client.
+ * This matches the AuthorityClient from @predicatesystems/authority.
+ */
+export interface PredicateAuthorityClient {
+  authorize(request: PredicateAuthorizeRequest): Promise<PredicateAuthorizationResponse>;
+}
+
+/**
+ * Authorization request sent to the Predicate Authority sidecar.
+ */
+export interface PredicateAuthorizeRequest {
+  principal: string;
+  action: string;
+  resource: string;
+  intent_hash?: string;
+  context?: Record<string, unknown>;
+  labels?: string[];
+}
+
+/**
+ * Authorization response from the Predicate Authority sidecar.
+ */
+export interface PredicateAuthorizationResponse {
+  allowed: boolean;
+  reason: string;
+  mandate_id: string | null;
+  violated_rule: string | null;
+  missing_labels: string[];
+}
 
 /**
  * Options for creating Predicate interceptors.
  */
 export interface PredicateInterceptorOptions {
   /** The Predicate Authority client for authorization */
-  authorityClient: AuthorityClient;
+  authorityClient: PredicateAuthorityClient;
 
   /** Principal ID used for authorization requests (default: "temporal-worker") */
   principal?: string;
@@ -43,18 +75,20 @@ export interface PredicateInterceptorOptions {
  * a PredicateAuthorizationError is thrown and the activity never executes.
  */
 export class PredicateActivityInterceptor implements ActivityInboundCallsInterceptor {
-  private readonly authorityClient: AuthorityClient;
+  private readonly authorityClient: PredicateAuthorityClient;
   private readonly principal: string;
   private readonly tenantId: string | undefined;
   private readonly sessionId: string | undefined;
   private readonly resource: string;
+  private readonly activityType: string;
 
-  constructor(options: PredicateInterceptorOptions) {
+  constructor(ctx: Context, options: PredicateInterceptorOptions) {
     this.authorityClient = options.authorityClient;
     this.principal = options.principal ?? "temporal-worker";
     this.tenantId = options.tenantId;
     this.sessionId = options.sessionId;
     this.resource = options.resource ?? "temporal:activity";
+    this.activityType = ctx.info.activityType;
   }
 
   /**
@@ -68,31 +102,21 @@ export class PredicateActivityInterceptor implements ActivityInboundCallsInterce
     input: ActivityExecuteInput,
     next: Next<ActivityInboundCallsInterceptor, "execute">
   ): Promise<unknown> {
-    const activityType = input.activityType;
     const activityArgs = input.args;
 
     // Hash the arguments for state evidence
     const argsJson = JSON.stringify(activityArgs);
     const argsHash = createHash("sha256").update(argsJson).digest("hex");
 
-    const request: AuthorizeRequest = {
-      principal: {
-        principalId: this.principal,
-        tenantId: this.tenantId,
-        sessionId: this.sessionId,
-      },
-      actionSpec: {
-        action: activityType,
-        resource: this.resource,
-        intent: `execute:${activityType}`,
-      },
-      stateEvidence: {
-        source: "temporal-worker",
-        stateHash: argsHash,
-        schemaVersion: "v1",
-      },
-      verificationEvidence: {
-        signals: [],
+    const request: PredicateAuthorizeRequest = {
+      principal: this.principal,
+      action: this.activityType,
+      resource: this.resource,
+      intent_hash: `ih_execute_${this.activityType.toLowerCase()}`,
+      context: {
+        state_hash: argsHash,
+        tenant_id: this.tenantId,
+        session_id: this.sessionId,
       },
     };
 
@@ -100,10 +124,10 @@ export class PredicateActivityInterceptor implements ActivityInboundCallsInterce
 
     if (!decision.allowed) {
       throw new PredicateAuthorizationError({
-        activityType,
+        activityType: this.activityType,
         reason: decision.reason,
-        violatedRule: decision.violatedRule ?? undefined,
-        missingLabels: decision.missingLabels ?? [],
+        violatedRule: decision.violated_rule ?? undefined,
+        missingLabels: decision.missing_labels ?? [],
       });
     }
 
@@ -141,9 +165,11 @@ export class PredicateActivityInterceptor implements ActivityInboundCallsInterce
 export function createPredicateInterceptors(
   options: PredicateInterceptorOptions
 ): WorkerInterceptors {
+  const activityInterceptorFactory: ActivityInterceptorsFactory = (ctx) => ({
+    inbound: new PredicateActivityInterceptor(ctx, options),
+  });
+
   return {
-    activity: () => ({
-      inbound: new PredicateActivityInterceptor(options),
-    }),
+    activity: [activityInterceptorFactory],
   };
 }
