@@ -1,0 +1,68 @@
+{
+  "name": "@predicatesystems/temporal",
+  "version": "0.1.0",
+  "description": "Temporal.io Worker Interceptor for Predicate Authority Zero-Trust authorization",
+  "main": "dist/index.js",
+  "module": "dist/index.mjs",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check src tests",
+    "lint:fix": "biome check --write src tests",
+    "format": "biome format --write src tests",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "temporal",
+    "temporalio",
+    "authorization",
+    "zero-trust",
+    "security",
+    "ai-agents",
+    "predicate-authority",
+    "interceptor"
+  ],
+  "author": "Predicate Systems <hello@predicatesystems.dev>",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/PredicateSystems/predicate-temporal-ts.git"
+  },
+  "bugs": {
+    "url": "https://github.com/PredicateSystems/predicate-temporal-ts/issues"
+  },
+  "homepage": "https://github.com/PredicateSystems/predicate-temporal-ts#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "peerDependencies": {
+    "@predicatesystems/authority": ">=0.1.0",
+    "@temporalio/worker": ">=1.9.0"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^1.5.0",
+    "@predicatesystems/authority": "^0.3.0",
+    "@temporalio/worker": "^1.11.0",
+    "@types/node": "^20.11.0",
+    "tsup": "^8.0.0",
+    "typescript": "^5.3.0",
+    "vitest": "^1.2.0"
+  }
+}
