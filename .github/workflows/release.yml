@@ -62,6 +62,9 @@ jobs:
           name: dist
           path: .
 
+      - name: Install dependencies
+        run: npm ci
+
       - name: Publish to npm
         run: npm publish --access public --provenance
         env:
