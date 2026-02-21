@@ -1,9 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import {
-  PredicateActivityInterceptor,
-  createPredicateInterceptors,
-} from "../src/interceptor.js";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PredicateAuthorizationError } from "../src/errors.js";
+import { PredicateActivityInterceptor, createPredicateInterceptors } from "../src/interceptor.js";
 
 // Mock AuthorityClient
 interface MockAuthorizationResponse {

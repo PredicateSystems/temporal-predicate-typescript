@@ -5,14 +5,14 @@
  * enforcing cryptographic authorization mandates before any activity code runs.
  */
 
+import { createHash } from "node:crypto";
+import type { AuthorityClient, AuthorizeRequest } from "@predicatesystems/authority";
 import type {
   ActivityExecuteInput,
   ActivityInboundCallsInterceptor,
   Next,
   WorkerInterceptors,
 } from "@temporalio/worker";
-import type { AuthorityClient, AuthorizeRequest } from "@predicatesystems/authority";
-import { createHash } from "node:crypto";
 import { PredicateAuthorizationError } from "./errors.js";
 
 /**
