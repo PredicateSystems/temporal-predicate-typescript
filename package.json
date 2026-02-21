@@ -43,12 +43,12 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/PredicateSystems/predicate-temporal-ts.git"
+    "url": "git+https://github.com/PredicateSystems/temporal-predicate-typescript.git"
   },
   "bugs": {
-    "url": "https://github.com/PredicateSystems/predicate-temporal-ts/issues"
+    "url": "https://github.com/PredicateSystems/temporal-predicate-typescript/issues"
   },
-  "homepage": "https://github.com/PredicateSystems/predicate-temporal-ts#readme",
+  "homepage": "https://github.com/PredicateSystems/temporal-predicate-typescript#readme",
   "engines": {
     "node": ">=18.0.0"
   },
